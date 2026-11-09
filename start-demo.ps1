@@ -39,28 +39,32 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "[*] All tests verified successfully!" -ForegroundColor Green
 }
 
-# 4. Check Frontend dependencies
-$PkgMgr = "npm"
-if (Get-Command pnpm -ErrorAction SilentlyContinue) {
-    $PkgMgr = "pnpm"
+# 4. Resolve Node package manager on Windows (.cmd)
+$NpmCmd = (Get-Command npm.cmd -ErrorAction SilentlyContinue).Source
+if (-not $NpmCmd) {
+    $NpmCmd = (Get-Command npm -ErrorAction SilentlyContinue).Source
+}
+if (-not $NpmCmd) {
+    $NpmCmd = "npm"
 }
 
 $NodeModules = Join-Path $RepoRoot "frontend\node_modules"
 if (-not (Test-Path $NodeModules)) {
     Write-Host "`n[!] Installing frontend dependencies..." -ForegroundColor Yellow
-    Start-Process $PkgMgr -ArgumentList "install" -WorkingDirectory "$RepoRoot\frontend" -Wait -NoNewWindow
+    Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$NpmCmd`"", "install" -WorkingDirectory "$RepoRoot\frontend" -Wait -NoNewWindow
     Write-Host "[*] Frontend dependencies installed!" -ForegroundColor Green
 }
 
-# 5. Start Backend Server
+# 5. Start Backend Server in a new console window
 Write-Host "`n[2/3] Starting FastAPI Backend on http://localhost:8000..." -ForegroundColor Cyan
-$BackendProcess = Start-Process $PyExe -ArgumentList "-m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload" -WorkingDirectory "$RepoRoot\backend" -PassThru
+$BackendArgs = "-m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+$BackendProcess = Start-Process -FilePath $PyExe -ArgumentList $BackendArgs -WorkingDirectory "$RepoRoot\backend" -PassThru
 
-# 6. Start Frontend Dev Server
+# 6. Start Frontend Dev Server via cmd.exe in a new console window
 Write-Host "`n[3/3] Starting Next.js and AG Grid Frontend on http://localhost:3000..." -ForegroundColor Cyan
-$FrontendProcess = Start-Process $PkgMgr -ArgumentList "run","dev" -WorkingDirectory "$RepoRoot\frontend" -PassThru
+$FrontendProcess = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$NpmCmd`"", "run", "dev" -WorkingDirectory "$RepoRoot\frontend" -PassThru
 
-Start-Sleep -Seconds 5
+Start-Sleep -Seconds 4
 
 Write-Host "`n=================================================================" -ForegroundColor Green
 Write-Host "  AegisPay is live!" -ForegroundColor Green
@@ -69,14 +73,27 @@ Write-Host "  - Backend Swagger Docs: http://localhost:8000/docs" -ForegroundCol
 Write-Host "  - OpenAPI Specification: $RepoRoot\openapi.json" -ForegroundColor DarkGray
 Write-Host "  - APIMatic SDK:          $RepoRoot\sdk-apimatic\" -ForegroundColor DarkGray
 Write-Host "=================================================================" -ForegroundColor Green
-Write-Host "Press Ctrl+C or close this window to stop both servers." -ForegroundColor Yellow
+Write-Host "Press Ctrl+C or close this terminal to stop both servers." -ForegroundColor Yellow
 
 # Launch browser
 Start-Process "http://localhost:3000"
 
 try {
-    Wait-Process -Id $BackendProcess.Id, $FrontendProcess.Id
+    # Keep the console alive until interrupted
+    while ($true) {
+        Start-Sleep -Seconds 2
+        if ($BackendProcess -and $BackendProcess.HasExited) { break }
+        if ($FrontendProcess -and $FrontendProcess.HasExited) { break }
+    }
 } finally {
-    Stop-Process -Id $BackendProcess.Id -ErrorAction SilentlyContinue
-    Stop-Process -Id $FrontendProcess.Id -ErrorAction SilentlyContinue
+    Write-Host "`nShutting down AegisPay servers..." -ForegroundColor Yellow
+    if ($BackendProcess -and -not $BackendProcess.HasExited) {
+        Stop-Process -Id $BackendProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+    if ($FrontendProcess -and -not $FrontendProcess.HasExited) {
+        Stop-Process -Id $FrontendProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+    # Ensure port cleanup
+    Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+    Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 }
