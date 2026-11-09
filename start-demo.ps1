@@ -1,12 +1,13 @@
-﻿# ==============================================================================
+# ==============================================================================
 # AegisPay 1-Click Demo Launcher (PowerShell / Windows)
 # ==============================================================================
 
 Write-Host "=================================================================" -ForegroundColor Cyan
-Write-Host "       AegisPay - Autonomous Escrow & Settlement Engine         " -ForegroundColor Green
+Write-Host "       AegisPay - Autonomous Escrow and Settlement Engine        " -ForegroundColor Green
 Write-Host "=================================================================" -ForegroundColor Cyan
 
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
+if (-not $RepoRoot) { $RepoRoot = Get-Location }
 Set-Location $RepoRoot
 
 # 1. Check .env existence
@@ -16,8 +17,8 @@ $EnvExample = Join-Path $RepoRoot ".env.example"
 if (-not (Test-Path $EnvFile)) {
     Write-Host "[!] .env file not found. Copying from .env.example..." -ForegroundColor Yellow
     Copy-Item $EnvExample $EnvFile
-    Write-Host "[✓] Created .env (Running in graceful PayPal mock fallback mode)" -ForegroundColor Green
-    Write-Host "    To use real PayPal Sandbox credentials, edit .env with your client ID & secret." -ForegroundColor DarkGray
+    Write-Host "[*] Created .env (Running in graceful PayPal mock fallback mode)" -ForegroundColor Green
+    Write-Host "    To use real PayPal Sandbox credentials, edit .env with your client ID and secret." -ForegroundColor DarkGray
 }
 
 # 2. Check Python executable
@@ -35,7 +36,7 @@ Write-Host "`n[1/3] Running AegisPay verification test suite..." -ForegroundColo
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[!] Test suite reported warnings, proceeding with launch..." -ForegroundColor Yellow
 } else {
-    Write-Host "[✓] All tests verified successfully!" -ForegroundColor Green
+    Write-Host "[*] All tests verified successfully!" -ForegroundColor Green
 }
 
 # 4. Check Frontend dependencies
@@ -46,9 +47,9 @@ if (Get-Command pnpm -ErrorAction SilentlyContinue) {
 
 $NodeModules = Join-Path $RepoRoot "frontend\node_modules"
 if (-not (Test-Path $NodeModules)) {
-    Write-Host "`n[!] Installing frontend dependencies ($PkgMgr install)..." -ForegroundColor Yellow
+    Write-Host "`n[!] Installing frontend dependencies..." -ForegroundColor Yellow
     Start-Process $PkgMgr -ArgumentList "install" -WorkingDirectory "$RepoRoot\frontend" -Wait -NoNewWindow
-    Write-Host "[✓] Frontend dependencies installed!" -ForegroundColor Green
+    Write-Host "[*] Frontend dependencies installed!" -ForegroundColor Green
 }
 
 # 5. Start Backend Server
@@ -56,8 +57,8 @@ Write-Host "`n[2/3] Starting FastAPI Backend on http://localhost:8000..." -Foreg
 $BackendProcess = Start-Process $PyExe -ArgumentList "-m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload" -WorkingDirectory "$RepoRoot\backend" -PassThru
 
 # 6. Start Frontend Dev Server
-Write-Host "`n[3/3] Starting Next.js + AG Grid Frontend on http://localhost:3000 ($PkgMgr run dev)..." -ForegroundColor Cyan
-$FrontendProcess = Start-Process $PkgMgr -ArgumentList "run dev" -WorkingDirectory "$RepoRoot\frontend" -PassThru
+Write-Host "`n[3/3] Starting Next.js and AG Grid Frontend on http://localhost:3000..." -ForegroundColor Cyan
+$FrontendProcess = Start-Process $PkgMgr -ArgumentList "run","dev" -WorkingDirectory "$RepoRoot\frontend" -PassThru
 
 Start-Sleep -Seconds 5
 
