@@ -12,3 +12,4 @@ export enum TransactionStatus {
   Disputed = 'DISPUTED',
   Failed = 'FAILED',
 }
+

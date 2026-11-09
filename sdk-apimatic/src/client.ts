@@ -19,3 +19,4 @@ export class AegisPayClient {
     this.webhooks = new WebhooksController(http);
   }
 }
+

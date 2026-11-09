@@ -13,3 +13,4 @@ export interface Configuration {
   environment?: Environment | string;
   timeout?: number;
 }
+

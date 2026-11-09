@@ -24,3 +24,4 @@ export interface TransactionResponse {
   createdAt: string;
   updatedAt: string;
 }
+

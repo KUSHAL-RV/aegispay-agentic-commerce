@@ -8,3 +8,4 @@ export interface AuditEntry {
   details: string | null;
   timestamp: string;
 }
+

@@ -8,3 +8,4 @@ export interface CreateTransactionRequest {
   amount: number;
   currency?: string;
 }
+
