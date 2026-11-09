@@ -1,0 +1,26 @@
+{
+  "name": "@aegispay/sdk",
+  "version": "1.0.0",
+  "description": "APIMatic-generated TypeScript SDK for AegisPay Autonomous Escrow & PayPal Settlement Engine",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "apimatic",
+    "paypal",
+    "escrow",
+    "sdk",
+    "langgraph",
+    "presidio",
+    "ed25519",
+    "ai-agents"
+  ],
+  "author": "AegisPay Contributors",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

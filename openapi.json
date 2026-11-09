@@ -1,0 +1,400 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AegisPay – Autonomous B2B Escrow & Settlement Engine",
+    "description": "Autonomous B2B Proof-of-Work Escrow, PII-Sanitized Compliance, and PayPal Settlement Engine for AI Agents.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "AegisPay Engineering Team",
+      "url": "https://github.com/KUSHAL-RV/aegispay-agentic-commerce"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8000",
+      "description": "Local Development Server"
+    },
+    {
+      "url": "https://aegispay-backend.onrender.com",
+      "description": "Render Production Server"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Liveness and health probe for container orchestration.",
+        "operationId": "healthCheck",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "healthy" },
+                    "service": { "type": "string", "example": "aegispay-backend" }
+                  },
+                  "required": ["status", "service"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/transactions/create": {
+      "post": {
+        "tags": ["Transactions"],
+        "summary": "Create Escrow Transaction",
+        "description": "Ingests a new B2B deliverable escrow request, executes the 4-node LangGraph autonomous pipeline (Presidio PII scrub, policy check, decision, Ed25519 signing), and locks escrow in PayPal Sandbox via Orders v2 AUTHORIZE intent.",
+        "operationId": "createTransaction",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTransactionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transaction created and processed through agent escrow pipeline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/transactions/{transaction_id}/approve": {
+      "post": {
+        "tags": ["Transactions"],
+        "summary": "Approve and Settle Escrow",
+        "description": "Human-in-the-Loop or automated approval: captures authorized PayPal escrow hold and triggers instant contractor milestone payout via Payouts v1 API.",
+        "operationId": "approveTransaction",
+        "parameters": [
+          {
+            "name": "transaction_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" },
+            "description": "Unique identifier of the escrow transaction"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transaction captured and payout initiated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid transaction state for approval" },
+          "404": { "description": "Transaction not found" }
+        }
+      }
+    },
+    "/api/transactions/{transaction_id}/void": {
+      "post": {
+        "tags": ["Transactions"],
+        "summary": "Void Escrow Authorization",
+        "description": "Releases the PayPal authorization hold without capturing funds, cancelling the escrow lock.",
+        "operationId": "voidTransaction",
+        "parameters": [
+          {
+            "name": "transaction_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" },
+            "description": "Unique identifier of the escrow transaction"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Authorization voided successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid transaction state for voiding" },
+          "404": { "description": "Transaction not found" }
+        }
+      }
+    },
+    "/api/transactions": {
+      "get": {
+        "tags": ["Transactions"],
+        "summary": "List Escrow Transactions",
+        "description": "Retrieves transactions ordered by creation date descending with optional status filtering for AG Grid ledger feeds.",
+        "operationId": "listTransactions",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Filter by TransactionStatus (e.g., AUTHORIZED, CAPTURED, VOIDED)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of escrow transactions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TransactionResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/transactions/{transaction_id}": {
+      "get": {
+        "tags": ["Transactions"],
+        "summary": "Get Transaction By ID",
+        "description": "Retrieves comprehensive details of a single escrow transaction including Presidio scrub logs and Ed25519 signature.",
+        "operationId": "getTransaction",
+        "parameters": [
+          {
+            "name": "transaction_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transaction details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            }
+          },
+          "404": { "description": "Transaction not found" }
+        }
+      }
+    },
+    "/api/transactions/{transaction_id}/audit": {
+      "get": {
+        "tags": ["Transactions"],
+        "summary": "Get Audit Trail",
+        "description": "Retrieves chronological immutable audit log entries recorded by system, agent, human, or PayPal webhook.",
+        "operationId": "getAuditLog",
+        "parameters": [
+          {
+            "name": "transaction_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Chronological audit events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEntry"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/transactions/simulate/{scenario}": {
+      "post": {
+        "tags": ["Judge Simulator"],
+        "summary": "Trigger Judge Simulator Scenario",
+        "description": "Executes one of three pre-built demonstration scenarios: happy_path ($12.5K clean escrow authorization), pii_heavy (Presidio PII detection and redaction), or policy_breach (blocked vendor & cap breach auto-rejection).",
+        "operationId": "simulateScenario",
+        "parameters": [
+          {
+            "name": "scenario",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["happy_path", "pii_heavy", "policy_breach"]
+            },
+            "description": "Pre-configured scenario identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Simulation completed and state updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            }
+          },
+          "400": { "description": "Unknown scenario requested" }
+        }
+      }
+    },
+    "/api/webhooks/paypal": {
+      "post": {
+        "tags": ["Webhooks"],
+        "summary": "PayPal Webhook Receiver",
+        "description": "Receives asynchronous event notifications from PayPal Developer Sandbox (e.g., PAYMENT.AUTHORIZATION.CREATED, PAYMENT.CAPTURE.COMPLETED, PAYMENT.PAYOUTS-ITEM.SUCCEEDED, CUSTOMER.DISPUTE.CREATED).",
+        "operationId": "paypalWebhook",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string" },
+                  "event_type": { "type": "string" },
+                  "resource": { "type": "object" }
+                },
+                "required": ["id", "event_type", "resource"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook received and processed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "received" },
+                    "event_id": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateTransactionRequest": {
+        "type": "object",
+        "required": ["vendor_name", "vendor_email", "description", "amount"],
+        "properties": {
+          "vendor_name": { "type": "string", "example": "Acme Cloud Services" },
+          "vendor_email": { "type": "string", "format": "email", "example": "billing@acmecloud.example.com" },
+          "description": { "type": "string", "example": "Annual cloud infrastructure license renewal for Q1 2025." },
+          "amount": { "type": "number", "format": "float", "example": 12500.0 },
+          "currency": { "type": "string", "default": "USD", "example": "USD" }
+        }
+      },
+      "TransactionResponse": {
+        "type": "object",
+        "required": ["id", "vendor_name", "vendor_email", "description", "amount", "currency", "status", "created_at", "updated_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "vendor_name": { "type": "string" },
+          "vendor_email": { "type": "string" },
+          "description": { "type": "string" },
+          "amount": { "type": "number", "format": "float" },
+          "currency": { "type": "string", "default": "USD" },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING_REVIEW",
+              "PII_SCRUBBED",
+              "AGENT_APPROVED",
+              "AUTHORIZED",
+              "CAPTURED",
+              "VOIDED",
+              "PAYOUT_SENT",
+              "DISPUTED",
+              "FAILED"
+            ]
+          },
+          "paypal_order_id": { "type": "string", "nullable": true },
+          "paypal_auth_id": { "type": "string", "nullable": true },
+          "paypal_capture_id": { "type": "string", "nullable": true },
+          "paypal_payout_id": { "type": "string", "nullable": true },
+          "pii_original": { "type": "string", "nullable": true },
+          "pii_redacted": { "type": "string", "nullable": true },
+          "pii_entities_found": { "type": "string", "nullable": true },
+          "ed25519_signature": { "type": "string", "nullable": true },
+          "ed25519_public_key": { "type": "string", "nullable": true },
+          "agent_reasoning": { "type": "string", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AuditEntry": {
+        "type": "object",
+        "required": ["id", "action", "actor", "timestamp"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "action": { "type": "string", "example": "AUTHORIZED" },
+          "actor": { "type": "string", "enum": ["system", "agent", "human", "paypal"], "example": "agent" },
+          "details": { "type": "string", "nullable": true },
+          "timestamp": { "type": "string", "format": "date-time" }
+        }
+      },
+      "HTTPValidationError": {
+        "type": "object",
+        "properties": {
+          "detail": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "loc": { "type": "array", "items": { "anyOf": [{ "type": "string" }, { "type": "integer" }] } },
+                "msg": { "type": "string" },
+                "type": { "type": "string" }
+              },
+              "required": ["loc", "msg", "type"]
+            }
+          }
+        }
+      }
+    }
+  }
+}

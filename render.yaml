@@ -1,0 +1,50 @@
+services:
+  - type: web
+    name: aegispay-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    rootDir: backend
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: PAYPAL_CLIENT_ID
+        fromGroup: aegispay-secrets
+      - key: PAYPAL_CLIENT_SECRET
+        fromGroup: aegispay-secrets
+      - key: PAYPAL_MODE
+        value: sandbox
+      - key: PAYPAL_BASE_URL
+        value: https://api-m.sandbox.paypal.com
+      - key: LLM_API_KEY
+        fromGroup: aegispay-secrets
+      - key: LLM_MODEL
+        value: gpt-4o-mini
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aegispay-db
+          property: connectionString
+      - key: ED25519_PRIVATE_KEY
+        fromGroup: aegispay-secrets
+      - key: ED25519_PUBLIC_KEY
+        fromGroup: aegispay-secrets
+
+  - type: web
+    name: aegispay-frontend
+    runtime: node
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    rootDir: frontend
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NEXT_PUBLIC_API_URL
+        value: https://aegispay-backend.onrender.com
+      - key: NEXT_PUBLIC_WS_URL
+        value: wss://aegispay-backend.onrender.com/ws
+
+databases:
+  - name: aegispay-db
+    plan: free
+    databaseName: aegispay
+    user: aegispay
