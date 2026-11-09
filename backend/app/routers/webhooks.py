@@ -5,9 +5,8 @@ import hashlib
 import hmac
 from datetime import datetime, timezone
 from fastapi import APIRouter, Request, HTTPException, Depends
-from sqlmodel import Session, select
 
-from app.database import get_session
+from app.database import get_session, Session, select
 from app.models import EscrowTransaction, AuditLog, TransactionStatus
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])

@@ -1,11 +1,51 @@
-"""SQLModel ORM models for AegisPay escrow transactions, audit logs, and dispute defense."""
+"""SQLModel ORM models for AegisPay escrow transactions, audit logs, and dispute defense with standard Pydantic fallback."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Optional, Any
 
-from sqlmodel import Field, SQLModel
+try:
+    from sqlmodel import SQLModel, Field
+    SQLMODEL_AVAILABLE = True
+except ImportError:
+    SQLMODEL_AVAILABLE = False
+    from pydantic import BaseModel, Field as PydanticField
+
+    class ColumnDescriptor:
+        """Enables SQLModel-like attribute comparisons when SQLModel is not installed."""
+        def __init__(self, name: str):
+            self.name = name
+
+        def __eq__(self, other: Any):
+            return ("eq", self.name, other)
+
+        def __ne__(self, other: Any):
+            return ("ne", self.name, other)
+
+        def desc(self):
+            return ("desc", self.name)
+
+        def asc(self):
+            return ("asc", self.name)
+
+    class SQLModel(BaseModel):
+        """Fallback base model when sqlmodel is not installed."""
+        def __init_subclass__(cls, table: bool = False, **kwargs):
+            super().__init_subclass__(**kwargs)
+            # Attach column descriptors for query building
+            for field_name in cls.model_fields.keys():
+                setattr(cls, field_name, ColumnDescriptor(field_name))
+
+        model_config = {"extra": "ignore", "populate_by_name": True}
+
+    def Field(*args, default=..., default_factory=None, primary_key=False, **kwargs):
+        """Fallback field constructor matching SQLModel.Field."""
+        if default_factory is not None:
+            return PydanticField(default_factory=default_factory, **kwargs)
+        if default is not ...:
+            return PydanticField(default=default, **kwargs)
+        return PydanticField(**kwargs)
 
 
 class TransactionStatus(str, Enum):
@@ -49,8 +89,8 @@ class EscrowTransaction(SQLModel, table=True):
 
     agent_reasoning: Optional[str] = None
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class AuditLog(SQLModel, table=True):
@@ -63,7 +103,7 @@ class AuditLog(SQLModel, table=True):
     action: str
     actor: str  # "system", "agent", "human", "paypal"
     details: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class DisputeDefenseRecord(SQLModel, table=True):
@@ -74,7 +114,7 @@ class DisputeDefenseRecord(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     transaction_id: str
     dispute_id: Optional[str] = None
-    evidence_type: str
-    evidence_payload: str  # JSON string of evidence
+    evidence_type: str = "PROOF_OF_FULFILLMENT"
+    evidence_payload: str = "{}"
     status: str = "PREPARED"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -1,24 +1,116 @@
-"""Database engine and session management for AegisPay with automatic demo seeding."""
+"""Database engine and session management for AegisPay with SQLModel & standalone fallback."""
 
 import json
 from collections.abc import Generator
 from datetime import datetime, timezone
-from sqlmodel import Session, SQLModel, create_engine, select
+from typing import Any, List, Optional, Type, TypeVar, Union
 
 from app.config import get_settings
 
 _settings = get_settings()
 
-_connect_args: dict = {}
-if _settings.DATABASE_URL.startswith("sqlite"):
-    _connect_args["check_same_thread"] = False
+try:
+    from sqlmodel import Session, SQLModel, create_engine, select
+    SQLMODEL_AVAILABLE = True
 
-engine = create_engine(_settings.DATABASE_URL, connect_args=_connect_args)
+    _connect_args: dict = {}
+    if _settings.DATABASE_URL.startswith("sqlite"):
+        _connect_args["check_same_thread"] = False
+
+    engine = create_engine(_settings.DATABASE_URL, connect_args=_connect_args)
+
+except ImportError:
+    SQLMODEL_AVAILABLE = False
+    engine = None
+
+    class QueryResult:
+        def __init__(self, items: list):
+            self._items = items
+
+        def all(self) -> list:
+            return list(self._items)
+
+        def first(self) -> Optional[Any]:
+            return self._items[0] if self._items else None
+
+    class MockQuery:
+        def __init__(self, model_cls: Type):
+            self.model_cls = model_cls
+            self.conditions: list = []
+            self.order_by_specs: list = []
+
+        def where(self, *conditions):
+            self.conditions.extend(conditions)
+            return self
+
+        def order_by(self, *ordering):
+            self.order_by_specs.extend(ordering)
+            return self
+
+    def select(model_cls: Type) -> MockQuery:
+        return MockQuery(model_cls)
+
+    # In-memory document store partitioned by model class name
+    _DB_STORE: dict[str, dict[str, Any]] = {}
+
+    class FallbackSession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+        def add(self, obj: Any) -> None:
+            cls_name = obj.__class__.__name__
+            if cls_name not in _DB_STORE:
+                _DB_STORE[cls_name] = {}
+            obj_id = getattr(obj, "id", None)
+            if obj_id:
+                _DB_STORE[cls_name][str(obj_id)] = obj
+
+        def commit(self) -> None:
+            pass
+
+        def refresh(self, obj: Any) -> None:
+            pass
+
+        def get(self, model_cls: Type, obj_id: str) -> Optional[Any]:
+            cls_name = model_cls.__name__
+            return _DB_STORE.get(cls_name, {}).get(str(obj_id))
+
+        def exec(self, query: MockQuery) -> QueryResult:
+            cls_name = query.model_cls.__name__
+            items = list(_DB_STORE.get(cls_name, {}).values())
+
+            # Apply where conditions
+            for cond in query.conditions:
+                if isinstance(cond, tuple) and len(cond) == 3:
+                    op, attr, val = cond
+                    if op == "eq":
+                        items = [i for i in items if str(getattr(i, attr, None)) == str(val)]
+                    elif op == "ne":
+                        items = [i for i in items if str(getattr(i, attr, None)) != str(val)]
+
+            # Apply order_by specs
+            for spec in query.order_by_specs:
+                if isinstance(spec, tuple) and len(spec) == 2:
+                    direction, attr = spec
+                    reverse = (direction == "desc")
+                    items.sort(key=lambda x: str(getattr(x, attr, "")), reverse=reverse)
+
+            return QueryResult(items)
+
+    Session = FallbackSession
 
 
 def init_db() -> None:
     """Create all database tables and seed initial demo transactions if empty."""
-    SQLModel.metadata.create_all(engine)
+    if SQLMODEL_AVAILABLE and engine is not None:
+        from sqlmodel import SQLModel
+        SQLModel.metadata.create_all(engine)
     seed_initial_data()
 
 
@@ -27,7 +119,7 @@ def seed_initial_data() -> None:
     from app.models import EscrowTransaction, AuditLog, TransactionStatus
     from app.security.crypto_signer import get_crypto_signer
 
-    with Session(engine) as session:
+    with Session(engine) if SQLMODEL_AVAILABLE else Session() as session:
         existing = session.exec(select(EscrowTransaction)).first()
         if existing:
             return  # Already seeded or has data
@@ -56,7 +148,6 @@ def seed_initial_data() -> None:
         t1.ed25519_public_key = sig1.public_key_b64
         session.add(t1)
 
-        # Audit for t1
         session.add(AuditLog(transaction_id=t1.id, action="CREATED", actor="system", details="Created via seed initialization"))
         session.add(AuditLog(transaction_id=t1.id, action="PIPELINE_APPROVE", actor="agent", details=t1.agent_reasoning))
         session.add(AuditLog(transaction_id=t1.id, action="AUTHORIZED", actor="paypal", details=f"PayPal Auth ID: {t1.paypal_auth_id}"))
@@ -123,7 +214,11 @@ def seed_initial_data() -> None:
         session.commit()
 
 
-def get_session() -> Generator[Session, None, None]:
+def get_session() -> Generator[Any, None, None]:
     """FastAPI dependency that yields a database session and closes it after use."""
-    with Session(engine) as session:
-        yield session
+    if SQLMODEL_AVAILABLE and engine is not None:
+        with Session(engine) as session:
+            yield session
+    else:
+        with Session() as session:
+            yield session

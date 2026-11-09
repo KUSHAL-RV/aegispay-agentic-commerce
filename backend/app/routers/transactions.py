@@ -4,10 +4,9 @@ import json
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlmodel import Session, select
 from pydantic import BaseModel
 
-from app.database import get_session
+from app.database import get_session, Session, select
 from app.models import EscrowTransaction, AuditLog, DisputeDefenseRecord, TransactionStatus
 from app.security.presidio_guard import get_presidio_guard
 from app.security.crypto_signer import get_crypto_signer
